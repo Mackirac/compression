@@ -1,14 +1,104 @@
 use std::iter::FromIterator;
 use crate::util::binary::Bin;
-// use std::collections::HashSet;
+use crate::util::histogram::Hist;
+use std::collections::{ HashMap, HashSet };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub type Dict = HashMap<u8, Vec<bool>>;
+
+pub fn compress(input: &[u8], dict: Dict) -> Result<Vec<bool>, ()> {
+    let mut output = vec!();
+    for byte in input {
+        if let Some(code) = dict.get(byte) {
+            let mut code = code.clone();
+            output.append(&mut code);
+        }
+        else { return Err(()) }
+    }
+    Ok(output)
+}
+
+pub fn decompress(input: &[bool], tree: Tree) -> Result<Vec<u8>, ()> {
+    let mut output = vec!();
+    let mut node = &tree;
+    for bit in input.iter() {
+        match node {
+            Tree::Inner(l, r) => node = if *bit { r } else { l },
+            Tree::Leaf(v) => {
+                output.push(*v);
+                node = &tree;
+            }
+        }
+    }
+    if node != &tree { return Err(()) }
+    Ok(output)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Tree {
     Inner(Box<Tree>, Box<Tree>),
     Leaf(u8)
 }
 
 impl Tree {
+    pub fn new(histogram: Hist<u8>) -> Self {
+        let mut histogram : Vec<(Self, usize)> = histogram
+            .into_iter()
+            .map(|(b, c)| (Self::Leaf(b), c))
+            .collect();
+        histogram.sort_by(|b, a| a.1.cmp(&b.1));
+        while histogram.len() > 1 {
+            let l = histogram.pop().unwrap();
+            let r = histogram.pop().unwrap();
+            let node = Self::Inner(Box::new(l.0), Box::new(r.0));
+            let count = l.1 + r.1;
+            match histogram.binary_search_by(|n| count.cmp(&n.1)) {
+                Ok(index) | Err(index) => histogram.insert(index, (node, count))
+            }
+        }
+        histogram.pop().unwrap().0
+    }
+
+    pub fn to_dict(&self) -> Dict {
+        let mut dict = Dict::new();
+        let mut code = vec!();
+        let mut stack = vec!(self);
+        let mut visited = HashSet::new();
+
+        if let Self::Leaf(v) = self {
+            dict.insert(*v, vec!(false));
+            return dict;
+        }
+
+        Self::post_order_map(&mut stack, &mut code, &mut visited, &mut dict);
+
+        dict
+    }
+
+    fn post_order_map<'a>(
+        stack: &mut Vec<&'a Self>,
+        code: &mut Vec<bool>,
+        visited: &mut HashSet<&'a Self>,
+        dict: &mut Dict
+    ) {
+        while !stack.is_empty() {
+            let node = stack.pop().unwrap();
+            match node {
+                Self::Leaf(v) => { dict.insert(*v, code.clone()); },
+                Self::Inner(l, r) => {
+                    if !visited.contains(node) {
+                        visited.insert(node);
+                        stack.push(node);
+                        stack.push(r);
+                        stack.push(l);
+                        code.push(false);
+                        continue;
+                    }
+                }
+            }
+            if let Some(false) = code.pop() { code.push(true) }
+        }
+    }
+
     pub fn serialize(&self) -> Vec<bool> {
         let mut buffer = vec!();
         let mut stack = vec!(self);
@@ -84,6 +174,20 @@ impl Tree {
         }
         return buffer
     }
+}
+
+#[test]
+fn new_test() {
+    let mut hist : Hist<u8> = Hist::new();
+    hist.insert(0, 3);
+    hist.insert(2, 4);
+    hist.insert(5, 2);
+    hist.insert(10, 5);
+    hist.insert(15, 1);
+
+    let tree = Tree::new(hist);
+    println!("{:?}\n", tree);
+    println!("{:?}", tree.to_dict());
 }
 
 #[test]
