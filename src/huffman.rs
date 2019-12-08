@@ -5,31 +5,28 @@ use std::collections::{ HashMap, HashSet };
 
 pub type Dict = HashMap<u8, Vec<bool>>;
 
-pub fn compress(input: &[u8], dict: Dict) -> Result<Vec<bool>, ()> {
+pub fn compress(input: &[u8], dict: &Dict) -> Result<Vec<bool>, ()> {
     let mut output = vec!();
     for byte in input {
         if let Some(code) = dict.get(byte) {
-            let mut code = code.clone();
-            output.append(&mut code);
+            output = [output, code.clone()].concat();
         }
         else { return Err(()) }
     }
     Ok(output)
 }
 
-pub fn decompress(input: &[bool], tree: Tree) -> Result<Vec<u8>, ()> {
+pub fn decompress(input: &[bool], tree: &Tree) -> Result<Vec<u8>, ()> {
     let mut output = vec!();
-    let mut node = &tree;
+    let mut node = tree;
     for bit in input.iter() {
-        match node {
-            Tree::Inner(l, r) => node = if *bit { r } else { l },
-            Tree::Leaf(v) => {
-                output.push(*v);
-                node = &tree;
-            }
+        if let Tree::Inner(l, r) = node { node = if *bit { r } else { l } }
+        if let Tree::Leaf(v) = node {
+            output.push(*v);
+            node = tree;
         }
     }
-    if node != &tree { return Err(()) }
+    if node != tree { return Err(()) }
     Ok(output)
 }
 
@@ -177,17 +174,22 @@ impl Tree {
 }
 
 #[test]
-fn new_test() {
-    let mut hist : Hist<u8> = Hist::new();
-    hist.insert(0, 3);
-    hist.insert(2, 4);
-    hist.insert(5, 2);
-    hist.insert(10, 5);
-    hist.insert(15, 1);
+fn compression_test() {
+    use crate::util::histogram::hist;
 
+    let input = vec!(0_u8, 0, 0, 2, 2, 2, 2, 5, 5, 10, 10, 10, 10, 10, 15);
+    let hist = hist(input.iter().cloned());
     let tree = Tree::new(hist);
-    println!("{:?}\n", tree);
-    println!("{:?}", tree.to_dict());
+    let dict = tree.to_dict();
+    let output = compress(&input, &dict).unwrap();
+    let decomp = decompress(&output, &tree);
+
+    println!("Tree: {:?}\n", tree);
+    println!("Dict: {:?}\n", dict);
+    println!("Compression output: {:?}\n", output);
+    println!("Decompression output: {:?}", decomp);
+
+    assert_eq!(decomp, Ok(input));
 }
 
 #[test]
