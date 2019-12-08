@@ -1,15 +1,33 @@
 use std::iter::FromIterator;
 use crate::util::binary::Bin;
-use crate::util::histogram::Hist;
+use crate::util::histogram::{ hist, Hist };
 use std::collections::{ HashMap, HashSet };
 
 pub type Dict = HashMap<u8, Vec<bool>>;
+
+pub fn encode(input: &[u8]) -> Vec<bool> {
+    let histogram = hist(input.iter().cloned());
+    let tree = Tree::new(&histogram);
+    let size = 10*histogram.len() - 1;
+
+    let mut output = Bin::from_dec(size, 12).unwrap().unwrap();
+    output.append(&mut tree.serialize());
+    output.append(&mut compress(input, &tree.to_dict()).unwrap());
+
+    output
+}
+
+pub fn decode(input: &[bool]) -> Result<Vec<u8>, ()> {
+    let size = Bin::from_iter(&input[0..12]).to_dec();
+    let tree = Tree::deserialize(input[12..size+12].iter().cloned())?;
+    decompress(&input[size+12..], &tree)
+}
 
 pub fn compress(input: &[u8], dict: &Dict) -> Result<Vec<bool>, ()> {
     let mut output = vec!();
     for byte in input {
         if let Some(code) = dict.get(byte) {
-            output = [output, code.clone()].concat();
+            output.append(&mut code.clone());
         }
         else { return Err(()) }
     }
@@ -37,10 +55,10 @@ pub enum Tree {
 }
 
 impl Tree {
-    pub fn new(histogram: Hist<u8>) -> Self {
+    pub fn new(histogram: &Hist<u8>) -> Self {
         let mut histogram : Vec<(Self, usize)> = histogram
             .into_iter()
-            .map(|(b, c)| (Self::Leaf(b), c))
+            .map(|(b, c)| (Self::Leaf(*b), *c))
             .collect();
         histogram.sort_by(|b, a| a.1.cmp(&b.1));
         while histogram.len() > 1 {
@@ -174,12 +192,53 @@ impl Tree {
 }
 
 #[test]
+fn encoding_test() {
+    let input = vec!(0_u8, 0, 0, 2, 2, 2, 2, 5, 5, 10, 10, 10, 10, 10, 15);
+    let encoded = encode(&input);
+    assert_eq!(
+        encoded,
+        [
+            // SIZE
+            1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0,
+            // TREE
+            1,
+                1,
+                    0,
+                        0, 0, 0, 0, 0, 0, 0, 0,
+                    1,
+                        0,
+                            1, 1, 1, 1, 0, 0, 0, 0,
+                        0,
+                            1, 0, 1, 0, 0, 0, 0, 0,
+                1,
+                    0,
+                        0, 1, 0, 0, 0, 0, 0, 0,
+                    0,
+                        0, 1, 0, 1, 0, 0, 0, 0,
+            // DATA
+            0, 0,   0, 0,   0, 0,
+            1, 0,   1, 0,   1, 0,   1, 0,
+            0, 1, 1,        0, 1, 1,
+            1, 1,   1, 1,   1, 1,   1, 1,   1, 1,
+            0, 1, 0
+        ].into_iter().map(
+            |b| if *b == 1 { true } else { false}
+        ).collect::<Vec<bool>>()
+    );
+
+    let decoded = decode(&encoded);
+    println!("{:?}", encoded.len());
+
+    assert_eq!(decoded, Ok(input));
+}
+
+#[test]
 fn compression_test() {
     use crate::util::histogram::hist;
 
     let input = vec!(0_u8, 0, 0, 2, 2, 2, 2, 5, 5, 10, 10, 10, 10, 10, 15);
     let hist = hist(input.iter().cloned());
-    let tree = Tree::new(hist);
+    let tree = Tree::new(&hist);
     let dict = tree.to_dict();
     let output = compress(&input, &dict).unwrap();
     let decomp = decompress(&output, &tree);
@@ -252,4 +311,22 @@ fn serialization() {
 
     let binary = vec!(false, false, false, false, false, false, false, false);
     assert_eq!(Err(()), Tree::deserialize(binary.into_iter()));
+}
+
+#[test]
+fn image_compression() {
+    use std::fs::File;
+    use std::io::Read;
+
+    let mut file = File::open("C:\\Users\\Mateus\\Desktop\\image.bmp").unwrap();
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).unwrap();
+
+    println!("Tamanho da entrada: {:?} bits.", 8 * buffer.len());
+
+    let output = encode(&buffer);
+
+    println!("Tamanho da saída: {:?} bits.", output.len());
+
+    assert_eq!(decode(&output), Ok(buffer));
 }
