@@ -317,16 +317,21 @@ fn serialization() {
 fn image_compression() {
     use std::fs::File;
     use std::io::Read;
+    use std::path::Path;
 
-    let mut file = File::open("C:\\Users\\Mateus\\Desktop\\image.bmp").unwrap();
+    let path = Path::new("C:/Users/Mateus/Desktop/image.bmp");
+    let mut file = File::open(path).unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
-
-    println!("Tamanho da entrada: {:?} bits.", 8 * buffer.len());
-
     let output = encode(&buffer);
 
-    println!("Tamanho da saída: {:?} bits.", output.len());
+    println!("{:?}", buffer.len() * 8);
+    println!("{:?}", output.len());
+
+    println!(
+        "Taxa de compressão: {:.2?}%",
+        100. * (1.0 - output.len() as f64 / (buffer.len() * 8) as f64)
+    );
 
     assert_eq!(decode(&output), Ok(buffer));
 }

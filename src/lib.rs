@@ -2,3 +2,4 @@
 
 pub mod util;
 pub mod huffman;
+pub mod golomb;
