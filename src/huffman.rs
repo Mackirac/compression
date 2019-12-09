@@ -37,7 +37,7 @@ pub fn compress(input: &[u8], dict: &Dict) -> Result<Vec<bool>, ()> {
 pub fn decompress(input: &[bool], tree: &Tree) -> Result<Vec<u8>, ()> {
     let mut output = vec!();
     let mut node = tree;
-    for bit in input.iter() {
+    for bit in input {
         if let Tree::Inner(l, r) = node { node = if *bit { r } else { l } }
         if let Tree::Leaf(v) = node {
             output.push(*v);
@@ -57,7 +57,7 @@ pub enum Tree {
 impl Tree {
     pub fn new(histogram: &Hist<u8>) -> Self {
         let mut histogram : Vec<(Self, usize)> = histogram
-            .into_iter()
+            .iter()
             .map(|(b, c)| (Self::Leaf(*b), *c))
             .collect();
         histogram.sort_by(|b, a| a.1.cmp(&b.1));
@@ -135,8 +135,8 @@ impl Tree {
         buffer
     }
 
-    pub fn deserialize(input: impl Iterator<Item=bool>) -> Result<Self, ()> {
-        let nodes = Self::map(input)?;
+    pub fn deserialize(input: impl IntoIterator<Item=bool>) -> Result<Self, ()> {
+        let nodes = Self::map(input.into_iter())?;
         Self::reduce(nodes)
     }
 
@@ -171,7 +171,7 @@ impl Tree {
     }
 
     fn reduce_once(input: Vec<Option<Self>>) -> Vec<Option<Self>> {
-        let mut buffer = vec!();
+        let mut buffer = Vec::with_capacity(input.len());
         let mut i = 0;
         while i < input.len() {
             if i + 2 < input.len() {
